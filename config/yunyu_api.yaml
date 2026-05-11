@@ -7,6 +7,6 @@
 yunyu_api:
   url: http://yunyu.woa.com/test/api/alarm/sql_query/
   sys_id: check
-  token: QVBJfHwxOTQ5NjQ0MzQ0MjYxMTAzMDI5NDlhYWZlYTRmZmVhYzllMzg3MjE4MDcwNjU4ZjBmNQ==
+  token: 
   p_id: 1
   timeout: 60
