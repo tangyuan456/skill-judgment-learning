@@ -1,0 +1,84 @@
+# Rubrics.yaml — TracingClaw Finance 评分规则
+# 设计原则：每个维度独立可打分，权重之和=100%，等级描述可被程序化判断
+
+name: TracingClaw Finance Evaluation Rubrics
+version: 1.0
+total_weight: 100
+
+dimensions:
+  - id: D1
+    name: 数据溯源与工具调用
+    weight: 30
+    description: 评估是否正确调用工具、使用正确参数、标注数据来源
+    levels:
+      - score: 0
+        description: "未调用任何工具，凭空回答；或调用错误工具（如用新闻查股价）"
+       判定规则: "输出中无任何工具调用痕迹，或工具类型与问题完全不匹配"
+      - score: 1
+        description: "调用了工具，但未正确使用参数（如未区分A/H股代码）"
+       判定规则: "有工具调用记录，但代码格式/市场前缀错误"
+      - score: 2
+        description: "正确调用对应工具，并在输出中标注了数据来源"
+       判定规则: "工具调用正确，且输出中包含'数据来源：westock-data'或类似表述"
+      - score: 3
+        description: "能按'先结构化、后资讯'的顺序联动调用双工具，且参数精准"
+       判定规则: "同时调用了westock-data和mx-finance-search，且调用顺序符合优先级"
+
+  - id: D2
+    name: 口径合规性
+    weight: 25
+    description: 评估是否正确标注市场、币种、报告期、复权方式等核心口径
+    levels:
+      - score: 0
+        description: "混淆币种（美元说成人民币）、混淆报告期（2024Q1说成年报）"
+       判定规则: "币种或报告期标注与事实严重不符"
+      - score: 1
+        description: "提到了口径，但未在核查明细中逐项标注"
+       判定规则: "输出中提到了部分口径，但不完整"
+      - score: 2
+        description: "明确标注了市场、币种、报告期、复权方式等核心口径"
+       判定规则: "核查明细中包含'市场：A股/港股/美股'、'币种：人民币/港元/美元'等字段"
+      - score: 3
+        description: "能识别候选回答中的'口径陷阱'并给出修正口径"
+       判定规则: "明确指出了候选回答中的口径错误，并给出了正确口径"
+
+  - id: D3
+    name: 真实性评分的合理性
+    weight: 25
+    description: 评估0/1/2分评分是否准确反映错误严重程度
+    levels:
+      - score: 0
+        description: "明显错误的数据给了2分，或正确数据给了0分"
+       判定规则: "评分与事实严重不符"
+      - score: 1
+        description: "评分大致正确，但未给出具体判定理由"
+       判定规则: "评分正确但缺少'为什么给这个分'的解释"
+      - score: 2
+        description: "评分正确，且分解了主需/次需的得分依据"
+       判定规则: "评分正确且有清晰的判定逻辑"
+      - score: 3
+        description: "评分精确反映错误严重程度（核心数据错必0分，边缘描述错给1分）"
+       判定规则: "评分与错误类型严格对应"
+
+  - id: D4
+    name: 修正答案质量
+    weight: 20
+    description: 评估修正答案是否准确、完整、有来源
+    levels:
+      - score: 0
+        description: "修正答案依然错误或照抄原错误回答"
+       判定规则: "修正答案与事实不符"
+      - score: 1
+        description: "修正答案正确，但缺少数据来源引用"
+       判定规则: "数字正确但无来源标注"
+      - score: 2
+        description: "修正答案正确、简洁，并附带了来源和时间戳"
+       判定规则: "包含'数据来源：xxx'和具体日期"
+      - score: 3
+        description: "修正答案不仅正确，还补充了环比/同比趋势，增强了参考价值"
+       判定规则: "在正确答案基础上补充了趋势分析"
+
+scoring_logic:
+  formula: "总分 = Σ(维度得分 / 3 × 权重)"
+  pass_threshold: 2.0  # 平均分≥2.0为通过
+  weight_sum: 100

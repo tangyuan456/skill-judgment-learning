@@ -1,0 +1,41 @@
+Sysbench oltp Test
+Time: 2026-06-10 14:00:00
+DB: TDSQL-B-v22.7.2 host=10.0.0.11:3306
+Data: tables=16, table_size=1000000, prepare=true
+Threads: 32 64 128 256 512 1000
+Duration: 300s
+
+--- oltp_point_select | threads=32 | 14:00:00 ... TPS=18420.50, QPS=18420.50, P95=2.10ms, P99=3.40ms
+--- oltp_point_select | threads=64 | 14:05:00 ... TPS=32150.80, QPS=32150.80, P95=2.40ms, P99=3.90ms
+--- oltp_point_select | threads=128 | 14:10:00 ... TPS=58320.40, QPS=58320.40, P95=2.85ms, P99=4.60ms
+--- oltp_point_select | threads=256 | 14:15:00 ... TPS=72450.10, QPS=72450.10, P95=4.80ms, P99=8.20ms
+--- oltp_point_select | threads=512 | 14:20:00 ... TPS=78230.60, QPS=78230.60, P95=8.90ms, P99=15.40ms
+--- oltp_point_select | threads=1000 | 14:25:00 ... TPS=75100.20, QPS=75100.20, P95=18.20ms, P99=32.10ms
+
+--- oltp_read_only | threads=32 | 14:30:00 ... TPS=820.30, QPS=11484.20, P95=42.10ms, P99=58.30ms
+--- oltp_read_only | threads=64 | 14:35:00 ... TPS=1480.50, QPS=20727.00, P95=46.50ms, P99=64.20ms
+--- oltp_read_only | threads=128 | 14:40:00 ... TPS=2410.80, QPS=33751.20, P95=58.90ms, P99=82.40ms
+--- oltp_read_only | threads=256 | 14:45:00 ... TPS=3120.40, QPS=43685.60, P95=85.30ms, P99=120.80ms
+--- oltp_read_only | threads=512 | 14:50:00 ... TPS=3380.20, QPS=47322.80, P95=158.40ms, P99=224.50ms
+--- oltp_read_only | threads=1000 | 14:55:00 ... TPS=3220.60, QPS=45088.40, P95=320.10ms, P99=458.20ms
+
+--- oltp_read_write | threads=32 | 15:00:00 ... TPS=520.40, QPS=10408.00, P95=72.30ms, P99=98.50ms
+--- oltp_read_write | threads=64 | 15:05:00 ... TPS=940.20, QPS=18804.00, P95=78.50ms, P99=110.20ms
+--- oltp_read_write | threads=128 | 15:10:00 ... TPS=1560.80, QPS=31216.00, P95=92.10ms, P99=132.40ms
+--- oltp_read_write | threads=256 | 15:15:00 ... TPS=2010.50, QPS=40210.00, P95=138.40ms, P99=198.30ms
+--- oltp_read_write | threads=512 | 15:20:00 ... TPS=2180.30, QPS=43606.00, P95=248.20ms, P99=358.10ms
+--- oltp_read_write | threads=1000 | 15:25:00 ... TPS=2050.80, QPS=41016.00, P95=512.30ms, P99=748.40ms
+
+--- oltp_write_only | threads=32 | 15:30:00 ... TPS=4820.10, QPS=14460.30, P95=8.40ms, P99=14.20ms
+--- oltp_write_only | threads=64 | 15:35:00 ... TPS=8650.40, QPS=25951.20, P95=9.80ms, P99=16.50ms
+--- oltp_write_only | threads=128 | 15:40:00 ... TPS=14820.60, QPS=44461.80, P95=12.40ms, P99=21.30ms
+--- oltp_write_only | threads=256 | 15:45:00 ... TPS=18950.20, QPS=56850.60, P95=18.20ms, P99=32.40ms
+--- oltp_write_only | threads=512 | 15:50:00 ... TPS=20120.80, QPS=60362.40, P95=32.50ms, P99=58.20ms
+--- oltp_write_only | threads=1000 | 15:55:00 ... TPS=19580.40, QPS=58741.20, P95=68.40ms, P99=124.30ms
+
+--- oltp_update_index | threads=32 | 16:00:00 ... TPS=3120.50, QPS=3120.50, P95=12.80ms, P99=20.40ms
+--- oltp_update_index | threads=64 | 16:05:00 ... TPS=5640.20, QPS=5640.20, P95=14.20ms, P99=23.10ms
+--- oltp_update_index | threads=128 | 16:10:00 ... TPS=9820.40, QPS=9820.40, P95=17.50ms, P99=29.80ms
+--- oltp_update_index | threads=256 | 16:15:00 ... TPS=12480.80, QPS=12480.80, P95=24.60ms, P99=42.30ms
+--- oltp_update_index | threads=512 | 16:20:00 ... TPS=13250.40, QPS=13250.40, P95=42.80ms, P99=72.50ms
+--- oltp_update_index | threads=1000 | 16:25:00 ... TPS=12820.10, QPS=12820.10, P95=88.40ms, P99=152.30ms
