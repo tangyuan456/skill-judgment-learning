@@ -2,8 +2,7 @@
 import os
 import sys
 
-SKILL_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(SKILL_BASE, 'tdsql-b-whitepaper', 'scripts'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts'))
 from constants import SCENARIO_CN, SCENARIOS as STD_SCENARIOS  # noqa: E402
 
 
@@ -29,7 +28,7 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
     cover = {
         'title': '数据库版本迭代演进报告',
         'subtitle': f'{versions[0]} → {versions[-1]} 共 {len(versions)} 个版本',
-        'date': '2026-04-28',
+        'date': '2026-06-16',
         'version': 'v1.0',
     }
 
@@ -38,8 +37,8 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
     # === 第 1 章 演进结论 ===
     cum_rows = [
         [SCENARIO_CN.get(s, s),
-         fmt_int(trend.get(s, [{}])[0].get('peak_qps')),
-         fmt_int(trend.get(s, [{}])[-1].get('peak_qps')),
+         fmt_int((trend.get(s, [{}])[0].get('peak_qps')) if trend.get(s) else None),
+         fmt_int((trend.get(s, [{}])[-1].get('peak_qps')) if trend.get(s) else None),
          fmt_pct(cumulative.get(s))]
         for s in scenarios
     ]
@@ -57,7 +56,7 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
                  'headers': ['场景', f'首版 ({versions[0]})', f'末版 ({versions[-1]})', '累计变化'],
                  'rows': cum_rows},
                 {'type': 'image', 'path': f'{charts_dir_rel}/iter_cumulative.png',
-                 'caption': '5 场景累计变化柱状图'},
+                 'caption': '场景累计变化柱状图'},
             ]},
             {'id': 'ch1_3', 'title': '1.3 关键发现', 'blocks': [
                 {'type': 'insight', 'level': 'L1',
@@ -72,11 +71,10 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
     })
 
     # === 第 2 章 版本与环境 ===
-    ver_rows = [[v] for v in versions]
     sections.append({
         'id': 'ch2', 'title': '第 2 章 版本清单与环境', 'blocks': [], 'subsections': [
             {'id': 'ch2_1', 'title': '2.1 版本清单',
-             'blocks': [{'type': 'table', 'headers': ['版本'], 'rows': ver_rows}]},
+             'blocks': [{'type': 'table', 'headers': ['版本'], 'rows': [[v] for v in versions]}]},
             {'id': 'ch2_2', 'title': '2.2 数据来源',
              'blocks': [{'type': 'paragraph',
                          'text': f"数据源：{meta.get('source_info', {}).get('type', '-')} "
@@ -96,7 +94,7 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
             for r in srs:
                 rows.append([SCENARIO_CN.get(s, s), str(r['threads']),
                              fmt_int(r['tps']), fmt_int(r['qps']),
-                             f"{r['p95_ms']:.2f}",
+                             f"{r['p95_ms']:.2f}" if r.get('p95_ms') else '-',
                              f"{r['p99_ms']:.2f}" if r.get('p99_ms') else '-'])
         ch3_subs.append({
             'id': f'ch3_{i}', 'title': f'3.{i} {v}',
@@ -148,7 +146,7 @@ def build_iteration_report_data(extracted, analysis, insights, intent, charts_di
     advance_scenarios = [s for s, c in cumulative.items() if c and c > 5]
     if advance_scenarios:
         advice.append(f'持续优化方向：{"、".join(SCENARIO_CN.get(s, s) for s in advance_scenarios)} 场景累计提升显著，可作为后续宣传重点。')
-    advice.append('对未测试的高并发段（>1024）进行抽样验证，确认演进趋势在生产并发下成立。')
+    advice.append('对未测试的高并发段进行抽样验证，确认演进趋势在生产并发下成立。')
 
     sections.append({
         'id': 'ch5', 'title': '第 5 章 优化建议', 'blocks': [], 'subsections': [

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-run_pipeline.py — 一键端到端执行
+run_pipeline.py — 一键端到端执行（自包含版本）
 
 输入：用户自然语言（--text）或已生成的 intent.json（--intent）
 输出：output/{report.md, report.docx, report.html, charts/, data/}
 
 用法：
     # 模式 1：自然语言
-    python run_pipeline.py --text "对比 task_id 为 878fd4d4 和 999abcde 的集中式只读场景报告" --out output
+    python run_pipeline.py --text "对 test.log 生成单次测试报告" --out output
 
     # 模式 2：本地文件
     python run_pipeline.py --text "/path/to/sysbench.log" --out output
@@ -27,8 +27,7 @@ SKILL_DIR = HERE.parent
 
 
 def run(cmd, cwd=None):
-    print(f'\n▶ {" ".join(cmd)}')
-    # 默认 cwd = 用户调用 run_pipeline 时的工作目录（保持稳定）
+    print(f'\n> {" ".join(cmd)}')
     effective_cwd = cwd or os.getcwd()
     r = subprocess.run(cmd, cwd=effective_cwd)
     if r.returncode != 0:
@@ -40,8 +39,6 @@ def main():
     ap.add_argument('--text', help='用户自然语言输入')
     ap.add_argument('--intent', help='已有 intent.json 路径（跳过解析）')
     ap.add_argument('--out', required=True, help='输出目录')
-    ap.add_argument('--db-config', default='db-report-skill/config/db.yaml')
-    ap.add_argument('--need-html', default='需要', choices=['需要', '不需要'])
     args = ap.parse_args()
 
     out_dir = Path(args.out).resolve()
@@ -58,7 +55,6 @@ def main():
 
     # === 阶段 1：意图解析 ===
     if args.intent:
-        # 直接复制
         with open(args.intent, encoding='utf-8') as f:
             intent = json.load(f)
         with open(intent_path, 'w', encoding='utf-8') as f:
@@ -70,15 +66,14 @@ def main():
              '--text', args.text, '--out', str(intent_path)])
 
     intent = json.load(open(intent_path, encoding='utf-8'))
-    print(f'\n📋 意图解析结果：')
-    print(f'   data_source_type: {intent["data_source_type"]}')
-    print(f'   report_type:      {intent["report_type"]}')
+    print(f'\n意图解析结果：')
+    print(f'  data_source_type: {intent["data_source_type"]}')
+    print(f'  report_type:      {intent["report_type"]}')
 
     # === 阶段 2：数据接入 ===
     run([sys.executable, str(HERE / 'data_source_adapter.py'),
          '--intent', str(intent_path),
-         '--out', str(extracted_path),
-         '--db-config', args.db_config])
+         '--out', str(extracted_path)])
 
     # === 阶段 3：分析 ===
     run([sys.executable, str(HERE / 'analyze.py'),
@@ -103,7 +98,7 @@ def main():
          '--out-dir', str(out_dir),
          '--charts-dir-rel', 'charts'])
 
-    print('\n🎉 流水线完成')
+    print('\n流水线完成')
     print(f'   报告位于: {out_dir}/')
     print(f'     - report.md')
     print(f'     - report.docx')

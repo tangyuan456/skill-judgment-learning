@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-analyze.py — 按 report_type 分发到不同分析模块
+analyze.py — 按 report_type 分发到不同分析模块（自包含版本）
 
 输入：data/extracted_data.json + data/intent.json
 输出：data/analysis_results.json + data/insights.json
@@ -12,50 +12,12 @@ import sys
 from collections import defaultdict
 from typing import Any, Dict, List
 
-# ⚠️ 重要：本脚本与上游 tdsql-b-whitepaper/scripts/analyze.py 重名。
-# 只把上游目录加入 path 是不够的（仍会先找到自己）。
-# 上游 analyze.upstream_analyze / peak_for / scenario_records 用 _load_upstream_analyze() 懒加载。
-
-_UPSTREAM_CANDIDATES = [
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                 'tdsql-b-whitepaper', 'scripts'),
-    os.path.join(os.getcwd(), 'tdsql-b-whitepaper', 'scripts'),
-    os.path.join(os.getcwd(), '..', 'tdsql-b-whitepaper', 'scripts'),
-]
-
-
-def _load_upstream_analyze():
-    """通过 importlib.util 从文件路径加载上游 analyze 模块（避免与本文件重名的循环）。"""
-    import importlib.util
-    for cand in _UPSTREAM_CANDIDATES:
-        cand = os.path.abspath(cand)
-        path = os.path.join(cand, 'analyze.py')
-        if os.path.exists(path):
-            if cand not in sys.path:
-                sys.path.insert(0, cand)
-            spec = importlib.util.spec_from_file_location('upstream_analyze_mod', path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            return mod.analyze, mod.peak_for, mod.scenario_records
-    raise RuntimeError('未找到 tdsql-b-whitepaper/scripts/analyze.py')
-
-
-def _load_scenario_cn():
-    import importlib.util
-    for cand in _UPSTREAM_CANDIDATES:
-        cand = os.path.abspath(cand)
-        path = os.path.join(cand, 'constants.py')
-        if os.path.exists(path):
-            if cand not in sys.path:
-                sys.path.insert(0, cand)
-            from constants import SCENARIO_CN  # type: ignore
-            return SCENARIO_CN
-    return {}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from analyze_core import analyze as core_analyze, peak_for, scenario_records  # noqa: E402
 
 
 def analyze_iteration(extracted: Dict[str, Any], intent: Dict[str, Any]) -> Dict[str, Any]:
     """迭代报告的额外分析：版本演进趋势 + 累计变化 + 回归点。"""
-    _, peak_for, _ = _load_upstream_analyze()
     meta = extracted['meta']
     records = extracted['records']
     threshold = (intent.get('iteration_config') or {}).get('regression_threshold_pct', 5)
@@ -72,21 +34,21 @@ def analyze_iteration(extracted: Dict[str, Any], intent: Dict[str, Any]) -> Dict
             if not peak:
                 continue
             delta_pct = None
-            if prev_peak:
-                delta_pct = (peak['qps'] - prev_peak) / prev_peak * 100
+            if prev_peak and prev_peak > 0:
+                delta_pct = (peak['peak_qps'] - prev_peak) / prev_peak * 100
                 if delta_pct < -threshold:
                     regressions.append({
                         'version': v, 'scenario': s,
-                        'peak_qps': peak['qps'], 'delta_pct': delta_pct,
+                        'peak_qps': peak['peak_qps'], 'delta_pct': delta_pct,
                     })
             rows.append({
-                'version': v, 'peak_qps': peak['qps'],
-                'peak_threads': peak['threads'], 'p95_ms': peak['p95_ms'],
+                'version': v, 'peak_qps': peak['peak_qps'],
+                'peak_threads': peak['peak_threads'], 'p95_ms': peak.get('peak_p95_ms'),
                 'delta_pct': delta_pct,
             })
-            prev_peak = peak['qps']
+            prev_peak = peak['peak_qps']
         trend[s] = rows
-        if len(rows) >= 2 and rows[0]['peak_qps']:
+        if len(rows) >= 2 and rows[0]['peak_qps'] and rows[0]['peak_qps'] > 0:
             cumulative[s] = (rows[-1]['peak_qps'] - rows[0]['peak_qps']) / rows[0]['peak_qps'] * 100
 
     return {
@@ -105,7 +67,7 @@ def analyze_custom(extracted: Dict[str, Any], intent: Dict[str, Any]) -> Dict[st
     records = extracted['records']
 
     if focus == '高并发':
-        threads_min = 256  # 默认阈值
+        threads_min = 256
         rkf = intent.get('results_key_filters') or {}
         if rkf.get('threads') and rkf['threads'].startswith('>'):
             try:
@@ -127,8 +89,7 @@ def analyze_custom(extracted: Dict[str, Any], intent: Dict[str, Any]) -> Dict[st
         return {
             'focus_dimension': '高并发',
             'buckets': buckets,
-            'main_finding': f'高并发段平均 QPS={_fmt(buckets[0]["avg_qps"])}，'
-                           f'中低并发段平均 QPS={_fmt(buckets[1]["avg_qps"])}',
+            'main_finding': f'高并发段平均 QPS={_fmt(buckets[0]["avg_qps"])}，中低并发段平均 QPS={_fmt(buckets[1]["avg_qps"])}',
         }
 
     # 通用：按产品分桶
@@ -145,13 +106,15 @@ def analyze_custom(extracted: Dict[str, Any], intent: Dict[str, Any]) -> Dict[st
     return {
         'focus_dimension': focus or '通用',
         'buckets': buckets,
-        'main_finding': '已按产品分桶输出平均 QPS / P95，详见第 3 章。',
+        'main_finding': '已按产品分桶输出平均 QPS / P95，详见分析章节。',
     }
 
 
 def _avg(values):
     vs = [v for v in values if v is not None]
-    return sum(vs) / len(vs) if vs else None
+    if not vs:
+        return None
+    return sum(vs) / len(vs)
 
 
 def _fmt(v):
@@ -172,53 +135,31 @@ def main():
         intent = json.load(f)
 
     report_type = intent.get('report_type', 'single')
-    data_kind = extracted.get('meta', {}).get('data_kind', 'sysbench_oltp')
 
-    # TPC-DS 分支：走独立分析，跳过 sysbench 专用的 upstream_analyze
-    if data_kind == 'tpcds_duration':
-        from analyze_tpcds import analyze_tpcds
-        results, insights = analyze_tpcds(extracted)
-        results['report_type'] = report_type
-        os.makedirs(os.path.dirname(args.out_analysis) or '.', exist_ok=True)
-        with open(args.out_analysis, 'w', encoding='utf-8') as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
-        with open(args.out_insights, 'w', encoding='utf-8') as f:
-            json.dump(insights, f, ensure_ascii=False, indent=2)
-        print(f'\n=== CHECKPOINT③（TPC-DS duration, report_type={report_type}）===')
-        print(f'✅ analysis_results.json 已保存: {args.out_analysis}')
-        print(f'✅ insights.json 已保存: {args.out_insights}')
-        return
-
-    # 通用分析（single_product + product_compare 都生成；某些 report_type 用不到）
-    upstream_analyze, _, _ = _load_upstream_analyze()
-    SCENARIO_CN = _load_scenario_cn()
-    results, insights = upstream_analyze(extracted)
+    # 核心分析
+    results, insights_list = core_analyze(extracted)
 
     # 按 report_type 增补
     if report_type == 'iteration':
         results['iteration'] = analyze_iteration(extracted, intent)
-        insights.setdefault('iteration_insights', [])
-        # 加入 L1 累计变化结论
-        for s, c in results['iteration']['cumulative_change'].items():
-            insights['iteration_insights'].append({
-                'level': 'L1',
-                'text': f"{SCENARIO_CN.get(s, s)}：累计变化 {c:+.1f}%",
-                'source': f'analysis_results.iteration.cumulative_change.{s}',
-                'scenario': s,
-            })
-        # 回归点 L2
-        for r in results['iteration']['regression_points']:
-            insights['iteration_insights'].append({
+        iteration = results['iteration']
+        insights_list.append({
+            'level': 'L1',
+            'text': f'共覆盖 {len(iteration.get("version_order", []))} 个版本的演进分析',
+            'source': 'analysis_results.iteration',
+            'scenario': 'all',
+        })
+        for r in iteration.get('regression_points', []):
+            insights_list.append({
                 'level': 'L2',
-                'text': f"回归：{r['version']} 在 {SCENARIO_CN.get(r['scenario'], r['scenario'])} 峰值下降 {abs(r['delta_pct']):.1f}%",
+                'text': f'回归：{r["version"]} 在 {r["scenario"]} 场景峰值下降 {abs(r["delta_pct"]):.1f}%',
                 'source': 'analysis_results.iteration.regression_points',
                 'scenario': r['scenario'],
             })
 
     elif report_type == 'custom':
         results['custom'] = analyze_custom(extracted, intent)
-        insights.setdefault('custom_insights', [])
-        insights['custom_insights'].append({
+        insights_list.append({
             'level': 'L2',
             'text': results['custom'].get('main_finding', ''),
             'source': 'analysis_results.custom',
@@ -226,6 +167,7 @@ def main():
         })
 
     results['report_type'] = report_type
+    insights = {'items': insights_list, 'report_type': report_type}
 
     os.makedirs(os.path.dirname(args.out_analysis) or '.', exist_ok=True)
     with open(args.out_analysis, 'w', encoding='utf-8') as f:
@@ -233,16 +175,10 @@ def main():
     with open(args.out_insights, 'w', encoding='utf-8') as f:
         json.dump(insights, f, ensure_ascii=False, indent=2)
 
-    # CHECKPOINT③
-    print(f'\n=== CHECKPOINT③（report_type={report_type}）===')
-    assert os.path.exists(args.out_analysis)
-    assert os.path.exists(args.out_insights)
-    if report_type == 'iteration':
-        assert 'iteration' in results, '缺少 iteration 字段'
-    if report_type == 'custom':
-        assert 'custom' in results, '缺少 custom 字段'
-    print(f'✅ analysis_results.json 已保存: {args.out_analysis}')
-    print(f'✅ insights.json 已保存: {args.out_insights}')
+    print(f'\n=== 分析完成（report_type={report_type}）===')
+    print(f'analysis_results.json 已保存: {args.out_analysis}')
+    print(f'insights.json 已保存: {args.out_insights}')
+    print(f'洞察数量: {len(insights_list)}')
 
 
 if __name__ == '__main__':

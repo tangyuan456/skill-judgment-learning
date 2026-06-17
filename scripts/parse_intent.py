@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
 """
-parse_intent.py — 用户自然语言 → intent.json
+parse_intent.py — 用户自然语言 → intent.json（仅支持文本和文件输入）
 
-实现规则源自 references/意图解析规范.md：
-  1. 数据源类型（detect_input.py）
-  2. report_type 关键词识别
-  3. 中英术语映射（只读 → read_only 等）
-  4. AND vs OR 关系识别
-  5. task_id / plan_id / report_id 提取
-  6. 版本号 / 并发数 / 表数等数字字段提取
-
-注：这是规则版（无 LLM 依赖）。如需更高识别率，可在 main() 接入 LLM 兜底。
+规则驱动，无 LLM 依赖。
 """
 import argparse
 import json
@@ -21,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from detect_input import detect_data_source  # noqa: E402
-
 
 # ============== 中英映射表 ==============
 SCENARIO_MAP = {
@@ -37,16 +28,12 @@ SCENARIO_MAP = {
     '主键点查': 'point_select',
     '随机点查': 'random_points',
     '随机范围查询': 'random_ranges',
-    'tpcc': 'tpmC',
-    'TPCC': 'tpmC',
 }
 
 ARCH_MAP = {
     '集中式': '集中式性能',
     '分布式': '分布式性能',
     '单机': '集中式性能',
-    'noshard': '集中式性能',
-    'shard': '分布式性能',
     '集群': '分布式性能',
 }
 
@@ -56,7 +43,6 @@ TOOL_MAP = {
     'tpcc': 'BenchmarkSQL',
     'tpch': 'tpch',
 }
-
 
 # ============== report_type 识别 ==============
 RE_COMPARISON = re.compile(r'对比|比较|差异|哪个更好|\bvs\b', re.IGNORECASE)
@@ -75,26 +61,20 @@ def detect_report_type(text: str) -> str:
 
 
 # ============== OR vs AND 识别 ==============
-# 当 "和/或/以及" 连接的是不同测试场景时，使用 OR
-# 简化策略：找出所有场景关键词命中位置，若被分散在多个 "和/或/以及" 子句中，启用 OR
 RE_OR_SEPARATOR = re.compile(r'\s*[和或、]\s*|以及')
 
 
 def extract_test_name_keywords(text: str) -> Dict[str, Any]:
-    """提取场景关键词 + 判断 AND/OR 关系。"""
-    # 1) 收集所有命中的关键词
     arch_hits = {kw: ARCH_MAP[kw] for kw in ARCH_MAP if kw in text}
     scen_hits = {kw: SCENARIO_MAP[kw] for kw in SCENARIO_MAP if kw in text}
 
     if not arch_hits and not scen_hits:
         return {'test_name_keywords': [], 'test_name_keywords_or': None}
 
-    # 2) 若用 "和/或/以及" 连接的是不同场景词（>= 2 个 scen_hits）→ 启用 OR
     has_separator = bool(RE_OR_SEPARATOR.search(text))
     distinct_scenarios = list(set(scen_hits.values()))
 
     if has_separator and len(distinct_scenarios) >= 2:
-        # 每个场景一组，arch 在每组中共享
         arch_part = list(set(arch_hits.values()))
         groups = [arch_part + [scen] for scen in distinct_scenarios]
         return {
@@ -102,7 +82,6 @@ def extract_test_name_keywords(text: str) -> Dict[str, Any]:
             'test_name_keywords_or': groups,
         }
 
-    # 3) AND 关系：所有命中拼一起
     keywords = list(set(arch_hits.values()) | set(scen_hits.values()))
     return {
         'test_name_keywords': keywords,
@@ -110,36 +89,12 @@ def extract_test_name_keywords(text: str) -> Dict[str, Any]:
     }
 
 
-# ============== task_id / plan_id / report_id ==============
-def extract_task_filters(text: str) -> Dict[str, Optional[str]]:
-    out = {'task_id': None, 'plan_id': None, 'report_id': None}
-    for kind in ['task_id', 'plan_id', 'report_id']:
-        m = re.search(rf'{kind}\s*[:为=]?\s*([a-zA-Z0-9_\-,\s]+?)(?:[的，。\s]|$)', text, re.IGNORECASE)
-        if m:
-            val = m.group(1).strip().rstrip(',')
-            # 多个 id 用逗号分隔
-            ids = re.split(r'[,\s和]+', val)
-            ids = [i for i in ids if re.match(r'^[a-zA-Z0-9_\-]+$', i)]
-            if ids:
-                out[kind] = ','.join(ids)
-                break
-    # 若未通过显式 kind 提取到，但 detect_input 提示是 task_id 模式
-    if not any(out.values()):
-        ds = detect_data_source(text)
-        if ds.get('type') == 'task_id':
-            out['task_id'] = ds['value']
-            for ext in ds.get('extras', []) or []:
-                out['task_id'] += ',' + ext
-    return out
-
-
 # ============== 版本号 ==============
 RE_VERSION = re.compile(r'(\d+\.\d+\.\d+(?:[\.\-]\w+)?)')
 
 
 def extract_versions(text: str) -> List[str]:
-    """提取 22.6.13 / 22.7.0 等版本号。"""
-    return list(dict.fromkeys(RE_VERSION.findall(text)))  # 保留顺序去重
+    return list(dict.fromkeys(RE_VERSION.findall(text)))
 
 
 # ============== 数值参数 ==============
@@ -162,7 +117,6 @@ def extract_results_filters(text: str) -> Dict[str, Optional[str]]:
     return out
 
 
-# ============== tool_name ==============
 def extract_tool_name(text: str) -> Optional[str]:
     lower = text.lower()
     for kw, val in TOOL_MAP.items():
@@ -176,17 +130,9 @@ def parse_intent(user_input: str) -> Dict[str, Any]:
     ds = detect_data_source(user_input)
     report_type = detect_report_type(user_input)
     test_name = extract_test_name_keywords(user_input)
-    task_filters = extract_task_filters(user_input)
     results_filters = extract_results_filters(user_input)
     versions = extract_versions(user_input)
     tool_name = extract_tool_name(user_input)
-
-    # 数据源 value 修正：若提取到 task_id/plan_id/report_id 但 ds.value 为空
-    if not ds.get('value'):
-        for v in task_filters.values():
-            if v:
-                ds = {'type': 'task_id', 'value': v}
-                break
 
     intent = {
         'data_source_type': ds['type'],
@@ -200,19 +146,17 @@ def parse_intent(user_input: str) -> Dict[str, Any]:
             'component_version': None,
         },
         'results_key_filters': results_filters,
-        'task_filters': task_filters,
+        'task_filters': {'task_id': None, 'plan_id': None, 'report_id': None},
         'iteration_config': None,
         'custom_config': None,
         'other_info': None,
     }
 
-    # 迭代报告默认配置
     if report_type == 'iteration':
         intent['iteration_config'] = {
             'version_range': versions,
             'regression_threshold_pct': 5,
         }
-    # 客制化报告骨架（focus_dimension 由用户在门控①补充）
     if report_type == 'custom':
         focus = None
         if 'buffer' in user_input.lower() or 'pool' in user_input.lower():
@@ -241,7 +185,7 @@ def main():
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
     with open(args.out, 'w', encoding='utf-8') as f:
         json.dump(intent, f, ensure_ascii=False, indent=2)
-    print(f'✅ intent.json 已生成: {args.out}')
+    print(f'intent.json 已生成: {args.out}')
     print(json.dumps(intent, ensure_ascii=False, indent=2))
 
 
